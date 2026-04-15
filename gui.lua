@@ -216,6 +216,7 @@ function XenonUI:CreateWindow(options)
     }, SG)
     WIN._WH = WH
 
+    -- ── главный фрейм (без ClipsDescendants, он мешает скругл.) ──
     local Win = _new("Frame",{
         Name = "Win",
         Size = UDim2.new(0,525,0,375),
@@ -223,12 +224,24 @@ function XenonUI:CreateWindow(options)
         BackgroundColor3 = T.BG,
         BackgroundTransparency = 0,
         BorderSizePixel = 0,
-        ClipsDescendants = true,
+        ClipsDescendants = false,   -- ВАЖНО: false, иначе углы обрезаются
     }, WH)
     _corner(Win, 10)
     local WinStroke = _stroke(Win, T.Border, 1)
     WIN._Win    = Win
     WIN._WinSt  = WinStroke
+
+    -- внутренний клиппер (чтобы контент не вылазил, но углы были чистые)
+    local WinClip = _new("Frame",{
+        Name = "WinClip",
+        Size = UDim2.new(1,0,1,0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ClipsDescendants = true,
+        ZIndex = 1,
+    }, Win)
+    _corner(WinClip, 10)
+    WIN._WinClip = WinClip
 
     Win.Size     = UDim2.new(0,0,0,0)
     Win.Position = UDim2.new(0,272,0,197)
@@ -241,14 +254,17 @@ function XenonUI:CreateWindow(options)
         end
     end)
 
+    -- ── топбар (теперь дочерний к WinClip) ──
     local TB = _new("Frame",{
         Size = UDim2.new(1,0,0,40),
         BackgroundColor3 = T.BG2,
         BackgroundTransparency = 0,
         BorderSizePixel = 0,
         ZIndex = 4,
-    }, Win)
+    }, WinClip)
     _corner(TB, 10)
+
+    -- закрываем нижние скругления топбара
     _new("Frame",{
         Size = UDim2.new(1,0,.5,0),
         Position = UDim2.new(0,0,.5,0),
@@ -256,6 +272,8 @@ function XenonUI:CreateWindow(options)
         BackgroundTransparency = 0,
         BorderSizePixel = 0, ZIndex = 4,
     }, TB)
+
+    -- разделитель
     _new("Frame",{
         Size = UDim2.new(1,0,0,1),
         Position = UDim2.new(0,0,1,-1),
@@ -264,6 +282,7 @@ function XenonUI:CreateWindow(options)
     }, TB)
     WIN._TB = TB
 
+    -- drag по топбару
     do
         local dragging, ds, sp = false, nil, nil
         local function conn(sig, fn)
@@ -294,6 +313,7 @@ function XenonUI:CreateWindow(options)
         end)
     end
 
+    -- кнопки топбара
     local BtnRow = _new("Frame",{
         Size = UDim2.new(0,72,0,16),
         Position = UDim2.new(0,12,0.5,-8),
@@ -352,17 +372,13 @@ function XenonUI:CreateWindow(options)
     makeTopBtn(T.Yellow, "-", function()
         if not WIN._alive then return end
         WIN._minimized = not WIN._minimized
+        local sz = WIN._WIN_SIZES[WIN._winSize]
         if WIN._minimized then
-            _tween(Win,{
-                Size=UDim2.new(0,WIN._WIN_SIZES[WIN._winSize].X,0,40)
-            },.3,Enum.EasingStyle.Quad)
-            _tween(WH,{
-                Size=UDim2.new(0,WIN._WIN_SIZES[WIN._winSize].X+20,0,60)
-            },.3,Enum.EasingStyle.Quad)
+            _tween(Win,{Size=UDim2.new(0,sz.X,0,40)},.3,Enum.EasingStyle.Quad)
+            _tween(WH, {Size=UDim2.new(0,sz.X+20,0,60)},.3,Enum.EasingStyle.Quad)
         else
-            local sz = WIN._WIN_SIZES[WIN._winSize]
             _spring(Win,{Size=UDim2.new(0,sz.X,0,sz.Y)},.45)
-            _spring(WH,{Size=UDim2.new(0,sz.X+20,0,sz.Y+20)},.45)
+            _spring(WH, {Size=UDim2.new(0,sz.X+20,0,sz.Y+20)},.45)
         end
     end)
 
@@ -450,29 +466,28 @@ function XenonUI:CreateWindow(options)
         end
     end)
 
+    -- ── тело окна (теперь в WinClip) ──
     local Body = _new("Frame",{
         Size = UDim2.new(1,0,1,-40),
         Position = UDim2.new(0,0,0,40),
         BackgroundColor3 = T.BG,
         BackgroundTransparency = 0,
         BorderSizePixel = 0,
-    }, Win)
+    }, WinClip)
     WIN._Body = Body
 
+    -- сайдбар
     local TabBar = _new("Frame",{
         Size = UDim2.new(0,128,1,-44),
         BackgroundColor3 = T.BG2,
         BackgroundTransparency = 0,
         BorderSizePixel = 0, ZIndex = 3,
     }, Body)
-    _corner(TabBar, 8)
-    _new("Frame",{
-        Size = UDim2.new(.5,0,1,0),
-        Position = UDim2.new(.5,0,0,0),
-        BackgroundColor3 = T.BG2,
-        BackgroundTransparency = 0,
-        BorderSizePixel = 0, ZIndex = 3,
-    }, TabBar)
+
+    -- скругление только слева
+    _corner(TabBar, 0)
+
+    -- правая граница сайдбара
     _new("Frame",{
         Size = UDim2.new(0,1,1,0),
         Position = UDim2.new(1,-1,0,0),
@@ -504,6 +519,7 @@ function XenonUI:CreateWindow(options)
     _list(TabScroll, 3)
     WIN._TabScroll = TabScroll
 
+    -- инфо игрока
     local PI = _new("Frame",{
         Size = UDim2.new(0,128,0,44),
         Position = UDim2.new(0,0,1,-44),
@@ -511,17 +527,8 @@ function XenonUI:CreateWindow(options)
         BackgroundTransparency = 0,
         BorderSizePixel = 0, ZIndex = 5,
     }, Body)
-    _corner(PI, 8)
-    _new("Frame",{
-        Size=UDim2.new(.5,0,1,0), Position=UDim2.new(.5,0,0,0),
-        BackgroundColor3=T.BG2, BackgroundTransparency=0,
-        BorderSizePixel=0, ZIndex=5,
-    }, PI)
-    _new("Frame",{
-        Size=UDim2.new(1,0,.5,0),
-        BackgroundColor3=T.BG2, BackgroundTransparency=0,
-        BorderSizePixel=0, ZIndex=5,
-    }, PI)
+
+    -- верхняя граница блока игрока
     _new("Frame",{
         Size=UDim2.new(1,0,0,1),
         BackgroundColor3=T.Border, BorderSizePixel=0, ZIndex=6,
@@ -578,6 +585,7 @@ function XenonUI:CreateWindow(options)
     }, Body)
     WIN._CA = ContentArea
 
+    -- Picker
     local Picker = _new("Frame",{
         Size = UDim2.new(0,270,0,0),
         Position = UDim2.new(.5,-135,.5,-100),
@@ -705,8 +713,7 @@ function XenonUI:CreateWindow(options)
                 WIN:_setKB(WIN._pickerTarget, kc)
                 local e = WIN._kbReg[WIN._pickerTarget]
                 WIN._PKCurrent.Text = "Now: "..kc.Name
-                WIN:Notify("Keybind",
-                    (e and e.label or "").." → "..kn, "ok")
+                WIN:Notify("Keybind",(e and e.label or "").." → "..kn,"ok")
                 for _,b in ipairs(PKGrid:GetChildren()) do
                     if b:IsA("TextButton") then
                         local s = b.Text == kn
@@ -807,8 +814,7 @@ function XenonUI:_openPicker(bindId, anchor)
             self:_setKB(self._pickerTarget, inp.KeyCode)
             local e = self._kbReg[self._pickerTarget]
             self._PKCurrent.Text = "Now: "..inp.KeyCode.Name
-            self:Notify("Keybind",
-                (e and e.label or "").." → "..inp.KeyCode.Name, "ok")
+            self:Notify("Keybind",(e and e.label or "").." → "..inp.KeyCode.Name,"ok")
         end)
         self:_closePicker()
     end)
