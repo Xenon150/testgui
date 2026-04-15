@@ -124,17 +124,23 @@ function XenonUI:CreateWindow(options)
     options = options or {}
 
     local WIN = setmetatable({}, XenonUI)
-    WIN._alive       = true
-    WIN._connections = {}
-    WIN._tabs        = {}
-    WIN._activeTab   = nil
-    WIN._kbReg       = {}
-    WIN._kbBadges    = {}
-    WIN._minimized   = false
-    WIN._winSize     = "normal"
-    WIN._guiVisible  = true
-    WIN._cfgData     = {}
-    WIN._cfgPath     = options.SaveKey or "xenon_cfg.json"
+    WIN._alive        = true
+    WIN._connections  = {}
+    WIN._tabs         = {}
+    WIN._activeTab    = nil
+    WIN._kbReg        = {}
+    WIN._kbBadges     = {}
+    WIN._minimized    = false
+    WIN._winSize      = "normal"
+    WIN._guiVisible   = true
+    WIN._cfgData      = {}
+    WIN._cfgPath      = options.SaveKey or "xenon_cfg.json"
+
+    -- реестр всех элементов для авто-применения при загрузке
+    WIN._toggleReg    = {}  -- {cfgKey, ctrl, callback}
+    WIN._sliderReg    = {}  -- {cfgKey, ctrl, callback}
+    WIN._dropdownReg  = {}  -- {cfgKey, ctrl, callback}
+    WIN._inputReg     = {}  -- {cfgKey, box, callback}
 
     local T = XenonUI.DefaultTheme
 
@@ -149,21 +155,92 @@ function XenonUI:CreateWindow(options)
             writefile(WIN._cfgPath, HttpService:JSONEncode(WIN._cfgData))
         end)
     end
+
     local function cfgLoad()
         if isfile and isfile(WIN._cfgPath) then
             local ok,r = pcall(function()
                 return HttpService:JSONDecode(readfile(WIN._cfgPath))
             end)
-            if ok and r then WIN._cfgData = r; return true end
+            if ok and r then
+                WIN._cfgData = r
+                return true
+            end
         end
         return false
     end
-    WIN._cfgSave = cfgSave
-    WIN._cfgLoad = cfgLoad
+
+    -- применить загруженный конфиг ко всем элементам и вызвать callbacks
+    local function cfgApply()
+        -- toggles
+        for _, entry in ipairs(WIN._toggleReg) do
+            local v = WIN._cfgData[entry.cfgKey]
+            if v ~= nil then
+                pcall(function() entry.ctrl:Set(v) end)
+                if entry.callback then
+                    task.defer(function()
+                        pcall(entry.callback, v)
+                    end)
+                end
+            end
+        end
+        -- sliders
+        for _, entry in ipairs(WIN._sliderReg) do
+            local v = WIN._cfgData[entry.cfgKey]
+            if v ~= nil then
+                pcall(function() entry.ctrl:Set(v) end)
+                if entry.callback then
+                    task.defer(function()
+                        pcall(entry.callback, v)
+                    end)
+                end
+            end
+        end
+        -- dropdowns
+        for _, entry in ipairs(WIN._dropdownReg) do
+            local v = WIN._cfgData[entry.cfgKey]
+            if v ~= nil then
+                pcall(function() entry.ctrl:Set(v) end)
+                if entry.callback then
+                    task.defer(function()
+                        pcall(entry.callback, v)
+                    end)
+                end
+            end
+        end
+        -- inputs
+        for _, entry in ipairs(WIN._inputReg) do
+            local v = WIN._cfgData[entry.cfgKey]
+            if v ~= nil then
+                pcall(function() entry.box.Text = v end)
+                if entry.callback then
+                    task.defer(function()
+                        pcall(entry.callback, v, false)
+                    end)
+                end
+            end
+        end
+        -- keybinds
+        for id, entry in pairs(WIN._kbReg) do
+            local savedName = WIN._cfgData["kb_"..id]
+            if savedName then
+                local kc = Enum.KeyCode[savedName]
+                if kc then
+                    pcall(function() WIN:_setKB(id, kc) end)
+                end
+            end
+        end
+    end
+
+    WIN._cfgSave  = cfgSave
+    WIN._cfgLoad  = cfgLoad
+    WIN._cfgApply = cfgApply
+
     WIN._set = function(k,v) WIN._cfgData[k] = v end
     WIN._get = function(k,d)
         return WIN._cfgData[k] ~= nil and WIN._cfgData[k] or d
     end
+
+    -- загружаем конфиг сразу (значения, callbacks применятся после создания элементов)
     cfgLoad()
 
     local title = options.Title or "Hub"
@@ -216,7 +293,6 @@ function XenonUI:CreateWindow(options)
     }, SG)
     WIN._WH = WH
 
-    -- ── главный фрейм (без ClipsDescendants, он мешает скругл.) ──
     local Win = _new("Frame",{
         Name = "Win",
         Size = UDim2.new(0,525,0,375),
@@ -224,14 +300,13 @@ function XenonUI:CreateWindow(options)
         BackgroundColor3 = T.BG,
         BackgroundTransparency = 0,
         BorderSizePixel = 0,
-        ClipsDescendants = false,   -- ВАЖНО: false, иначе углы обрезаются
+        ClipsDescendants = false,
     }, WH)
     _corner(Win, 10)
     local WinStroke = _stroke(Win, T.Border, 1)
-    WIN._Win    = Win
-    WIN._WinSt  = WinStroke
+    WIN._Win   = Win
+    WIN._WinSt = WinStroke
 
-    -- внутренний клиппер (чтобы контент не вылазил, но углы были чистые)
     local WinClip = _new("Frame",{
         Name = "WinClip",
         Size = UDim2.new(1,0,1,0),
@@ -254,7 +329,6 @@ function XenonUI:CreateWindow(options)
         end
     end)
 
-    -- ── топбар (теперь дочерний к WinClip) ──
     local TB = _new("Frame",{
         Size = UDim2.new(1,0,0,40),
         BackgroundColor3 = T.BG2,
@@ -263,8 +337,6 @@ function XenonUI:CreateWindow(options)
         ZIndex = 4,
     }, WinClip)
     _corner(TB, 10)
-
-    -- закрываем нижние скругления топбара
     _new("Frame",{
         Size = UDim2.new(1,0,.5,0),
         Position = UDim2.new(0,0,.5,0),
@@ -272,8 +344,6 @@ function XenonUI:CreateWindow(options)
         BackgroundTransparency = 0,
         BorderSizePixel = 0, ZIndex = 4,
     }, TB)
-
-    -- разделитель
     _new("Frame",{
         Size = UDim2.new(1,0,0,1),
         Position = UDim2.new(0,0,1,-1),
@@ -282,7 +352,6 @@ function XenonUI:CreateWindow(options)
     }, TB)
     WIN._TB = TB
 
-    -- drag по топбару
     do
         local dragging, ds, sp = false, nil, nil
         local function conn(sig, fn)
@@ -313,7 +382,6 @@ function XenonUI:CreateWindow(options)
         end)
     end
 
-    -- кнопки топбара
     local BtnRow = _new("Frame",{
         Size = UDim2.new(0,72,0,16),
         Position = UDim2.new(0,12,0.5,-8),
@@ -466,7 +534,6 @@ function XenonUI:CreateWindow(options)
         end
     end)
 
-    -- ── тело окна (теперь в WinClip) ──
     local Body = _new("Frame",{
         Size = UDim2.new(1,0,1,-40),
         Position = UDim2.new(0,0,0,40),
@@ -476,18 +543,12 @@ function XenonUI:CreateWindow(options)
     }, WinClip)
     WIN._Body = Body
 
-    -- сайдбар
     local TabBar = _new("Frame",{
         Size = UDim2.new(0,128,1,-44),
         BackgroundColor3 = T.BG2,
         BackgroundTransparency = 0,
         BorderSizePixel = 0, ZIndex = 3,
     }, Body)
-
-    -- скругление только слева
-    _corner(TabBar, 0)
-
-    -- правая граница сайдбара
     _new("Frame",{
         Size = UDim2.new(0,1,1,0),
         Position = UDim2.new(1,-1,0,0),
@@ -519,7 +580,6 @@ function XenonUI:CreateWindow(options)
     _list(TabScroll, 3)
     WIN._TabScroll = TabScroll
 
-    -- инфо игрока
     local PI = _new("Frame",{
         Size = UDim2.new(0,128,0,44),
         Position = UDim2.new(0,0,1,-44),
@@ -527,8 +587,6 @@ function XenonUI:CreateWindow(options)
         BackgroundTransparency = 0,
         BorderSizePixel = 0, ZIndex = 5,
     }, Body)
-
-    -- верхняя граница блока игрока
     _new("Frame",{
         Size=UDim2.new(1,0,0,1),
         BackgroundColor3=T.Border, BorderSizePixel=0, ZIndex=6,
@@ -585,7 +643,6 @@ function XenonUI:CreateWindow(options)
     }, Body)
     WIN._CA = ContentArea
 
-    -- Picker
     local Picker = _new("Frame",{
         Size = UDim2.new(0,270,0,0),
         Position = UDim2.new(.5,-135,.5,-100),
@@ -665,9 +722,9 @@ function XenonUI:CreateWindow(options)
     }, Picker)
     WIN._PKHint = PKHint
 
-    WIN._pickerTarget  = nil
-    WIN._pickerListen  = false
-    WIN._pickerKBConn  = nil
+    WIN._pickerTarget = nil
+    WIN._pickerListen = false
+    WIN._pickerKBConn = nil
 
     PKCloseBtn.MouseButton1Click:Connect(function()
         WIN:_closePicker()
@@ -736,9 +793,17 @@ function XenonUI:CreateWindow(options)
     end)
     table.insert(WIN._connections, ic)
 
+    -- автосохранение каждые 90 секунд
     task.spawn(function()
         while WIN._alive and task.wait(90) do
             if next(WIN._cfgData) then pcall(cfgSave) end
+        end
+    end)
+
+    -- применяем конфиг через небольшой delay чтобы все элементы успели создаться
+    task.delay(0.1, function()
+        if WIN._alive then
+            pcall(cfgApply)
         end
     end)
 
@@ -943,20 +1008,33 @@ function XenonUI:Notify(title, msg, ntype)
     end)
 end
 
+-- сохранить + уведомление
 function XenonUI:SaveConfig()
     local ok = pcall(self._cfgSave)
     self:Notify("Config", ok and "Saved!" or "Error saving",
         ok and "ok" or "error")
 end
 
+-- загрузить + применить callbacks + уведомление
 function XenonUI:LoadConfig()
     local ok = self._cfgLoad()
-    self:Notify("Config", ok and "Loaded!" or "File not found",
-        ok and "ok" or "warn")
+    if ok then
+        pcall(self._cfgApply)
+        self:Notify("Config", "Loaded & Applied!", "ok")
+    else
+        self:Notify("Config", "File not found", "warn")
+    end
 end
 
 function XenonUI:ResetConfig()
     self._cfgData = {}
+    -- сбрасываем все toggles на false
+    for _, entry in ipairs(self._toggleReg) do
+        pcall(function() entry.ctrl:Set(false) end)
+        if entry.callback then
+            task.defer(function() pcall(entry.callback, false) end)
+        end
+    end
     self:Notify("Config","Reset.","warn")
 end
 
@@ -1053,12 +1131,12 @@ function XenonUI:CreateTab(name)
     _list(colR,5); _padding(colR,6,6,2,4)
 
     local tab = {
-        _btn   = btn,
-        Panel  = panel,
-        Left   = colL,
-        Right  = colR,
-        _lib   = WIN,
-        Name   = name,
+        _btn  = btn,
+        Panel = panel,
+        Left  = colL,
+        Right = colR,
+        _lib  = WIN,
+        Name  = name,
     }
     table.insert(self._tabs, tab)
 
@@ -1275,6 +1353,23 @@ function XenonUI:_makeToggle(parent, label, default, cfgKey, callback)
     end
     setVisual(state,false)
 
+    local ctrl = {}
+    function ctrl:Get() return state end
+    function ctrl:Set(v)
+        state = v
+        setVisual(v,true)
+        if cfgKey then WIN._set(cfgKey,v) end
+    end
+
+    -- регистрируем в реестре для авто-применения конфига
+    if cfgKey then
+        table.insert(WIN._toggleReg, {
+            cfgKey   = cfgKey,
+            ctrl     = ctrl,
+            callback = callback,
+        })
+    end
+
     local clickBtn = _new("TextButton",{
         Size=UDim2.new(1,0,1,0), BackgroundTransparency=1,
         Text="", ZIndex=3, AutoButtonColor=false,
@@ -1298,13 +1393,6 @@ function XenonUI:_makeToggle(parent, label, default, cfgKey, callback)
         _tween(iSt,{Color=T.Border},.12)
     end)
 
-    local ctrl = {}
-    function ctrl:Get() return state end
-    function ctrl:Set(v)
-        state = v
-        setVisual(v,true)
-        if cfgKey then WIN._set(cfgKey,v) end
-    end
     return ctrl
 end
 
@@ -1343,385 +1431,3 @@ function XenonUI:_makeSlider(parent, label, mn, mx, default, cfgKey, callback)
 
     local fill = _new("Frame",{
         Size=UDim2.new(0,0,1,0),
-        BackgroundColor3=T.Accent, BorderSizePixel=0,
-    }, track)
-    _corner(fill,9)
-
-    local knob = _new("Frame",{
-        Size=UDim2.new(0,14,0,14), Position=UDim2.new(0,-7,0.5,-7),
-        BackgroundColor3=T.White, BorderSizePixel=0, ZIndex=5,
-    }, track)
-    _corner(knob,7); _stroke(knob,T.Accent,2)
-    _new("Frame",{
-        Size=UDim2.new(0,6,0,6), Position=UDim2.new(.5,-3,.5,-3),
-        BackgroundColor3=T.Accent, BorderSizePixel=0, ZIndex=6,
-    }, knob)
-
-    local function update(pct, animated)
-        pct = math.clamp(pct,0,1)
-        val = math.round(mn+(mx-mn)*pct)
-        local d = animated and 0.06 or 0
-        _tween(fill,{Size=UDim2.new(pct,0,1,0)},d)
-        _tween(knob,{Position=UDim2.new(pct,-7,0.5,-7)},d)
-        pcall(function() valLabel.Text = tostring(val) end)
-    end
-    update((val-mn)/(mx-mn), false)
-
-    local dragging = false
-    local hitbox = _new("TextButton",{
-        Size=UDim2.new(1,0,1,14), Position=UDim2.new(0,0,0,-7),
-        BackgroundTransparency=1, Text="", ZIndex=7,
-        AutoButtonColor=false,
-    }, track)
-
-    hitbox.MouseButton1Down:Connect(function()
-        if not WIN._alive then return end
-        dragging = true
-        _spring(knob,{Size=UDim2.new(0,17,0,17)},.2)
-        _tween(fill,{BackgroundColor3=T.Accent2},.1)
-    end)
-    WIN:_addConn(UserInputService.InputChanged, function(inp)
-        if not WIN._alive or not dragging then return end
-        if inp.UserInputType ~= Enum.UserInputType.MouseMovement then return end
-        pcall(function()
-            update((inp.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, false)
-            if cfgKey then WIN._set(cfgKey,val) end
-            if callback then pcall(callback,val) end
-        end)
-    end)
-    WIN:_addConn(UserInputService.InputEnded, function(inp)
-        if not WIN._alive or not dragging then return end
-        if inp.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-        dragging = false
-        _spring(knob,{Size=UDim2.new(0,14,0,14)},.3)
-        _tween(fill,{BackgroundColor3=T.Accent},.15)
-    end)
-    item.MouseEnter:Connect(function()
-        _tween(item,{BackgroundColor3=T.BG4},.12)
-        _tween(iSt,{Color=T.Border2},.12)
-    end)
-    item.MouseLeave:Connect(function()
-        _tween(item,{BackgroundColor3=T.BG3},.12)
-        _tween(iSt,{Color=T.Border},.12)
-    end)
-
-    local ctrl = {}
-    function ctrl:Get() return val end
-    function ctrl:Set(v)
-        update((v-mn)/(mx-mn),true)
-        if cfgKey then WIN._set(cfgKey,v) end
-    end
-    return ctrl
-end
-
-function XenonUI:_makeButton(parent, label, callback)
-    local T   = XenonUI.DefaultTheme
-    local WIN = self
-
-    local item = _new("Frame",{
-        Size=UDim2.new(1,-8,0,30),
-        BackgroundColor3=T.BG3, BackgroundTransparency=0,
-        BorderSizePixel=0, ClipsDescendants=true,
-    }, parent)
-    _corner(item,5)
-    local iSt = _stroke(item, T.Border)
-
-    local hov = _new("Frame",{
-        Size=UDim2.new(0,0,1,0),
-        BackgroundColor3=T.AccentDim, BackgroundTransparency=.35,
-        BorderSizePixel=0, ZIndex=1,
-    }, item)
-
-    local lbl = _new("TextLabel",{
-        Size=UDim2.new(1,0,1,0), BackgroundTransparency=1,
-        Text=label, TextColor3=T.Text2,
-        Font=Enum.Font.GothamBold, TextSize=11, ZIndex=3,
-    }, item)
-
-    local btn = _new("TextButton",{
-        Size=UDim2.new(1,0,1,0), BackgroundTransparency=1,
-        Text="", ZIndex=4, AutoButtonColor=false,
-    }, item)
-
-    btn.MouseEnter:Connect(function()
-        _tween(hov,{Size=UDim2.new(1,0,1,0)},.22,Enum.EasingStyle.Quad)
-        _tween(lbl,{TextColor3=T.White},.15)
-        _tween(iSt,{Color=T.Accent2},.15)
-    end)
-    btn.MouseLeave:Connect(function()
-        _tween(hov,{Size=UDim2.new(0,0,1,0)},.18)
-        _tween(lbl,{TextColor3=T.Text2},.15)
-        _tween(iSt,{Color=T.Border},.15)
-    end)
-    btn.MouseButton1Down:Connect(function()
-        _tween(item,{BackgroundColor3=T.Border2},.06)
-        _tween(lbl,{TextSize=10.5},.06)
-    end)
-    btn.MouseButton1Click:Connect(function()
-        if not WIN._alive then return end
-        local mp = UserInputService:GetMouseLocation()
-        _ripple(item, mp.X, mp.Y)
-        _spring(item,{BackgroundColor3=T.BG3},.35)
-        _spring(lbl,{TextSize=11},.3)
-        if callback then pcall(callback) end
-    end)
-
-    return item
-end
-
-function XenonUI:_makeDropdown(parent, label, opts, default, cfgKey, callback)
-    local T   = XenonUI.DefaultTheme
-    local WIN = self
-    local sel = self._get(cfgKey, default or (opts[1] or ""))
-    local open = false
-
-    local item = _new("Frame",{
-        Size=UDim2.new(1,-8,0,30),
-        BackgroundColor3=T.BG3, BackgroundTransparency=0,
-        BorderSizePixel=0, ClipsDescendants=false, ZIndex=10,
-    }, parent)
-    _corner(item,5)
-    local iSt = _stroke(item, T.Border)
-
-    _new("TextLabel",{
-        Size=UDim2.new(.44,0,1,0), Position=UDim2.new(0,10,0,0),
-        BackgroundTransparency=1, Text=label, TextColor3=T.Text,
-        Font=Enum.Font.GothamBold, TextSize=11,
-        TextXAlignment=Enum.TextXAlignment.Left, ZIndex=11,
-    }, item)
-
-    local ddBox = _new("Frame",{
-        Size=UDim2.new(.52,-4,0,22), Position=UDim2.new(.48,0,.5,-11),
-        BackgroundColor3=T.BG4, BackgroundTransparency=0,
-        BorderSizePixel=0, ZIndex=11,
-    }, item)
-    _corner(ddBox,4); _stroke(ddBox,T.Border)
-
-    local selTxt = _new("TextLabel",{
-        Size=UDim2.new(1,-20,1,0), Position=UDim2.new(0,7,0,0),
-        BackgroundTransparency=1, Text=sel, TextColor3=T.Text2,
-        Font=Enum.Font.GothamBold, TextSize=10,
-        TextXAlignment=Enum.TextXAlignment.Left, ZIndex=12,
-    }, ddBox)
-
-    local arrow = _new("TextLabel",{
-        Size=UDim2.new(0,14,1,0), Position=UDim2.new(1,-16,0,0),
-        BackgroundTransparency=1, Text="▾", TextColor3=T.Text3,
-        Font=Enum.Font.GothamBold, TextSize=10,
-        ZIndex=12, Rotation=0,
-    }, ddBox)
-
-    local list = _new("Frame",{
-        Size=UDim2.new(.52,-4,0,0), Position=UDim2.new(.48,0,1,4),
-        BackgroundColor3=T.BG3, BackgroundTransparency=0,
-        BorderSizePixel=0, ClipsDescendants=true,
-        ZIndex=50, Visible=false,
-    }, item)
-    _corner(list,5); _stroke(list,T.Border2); _list(list,1)
-
-    for _, opt in ipairs(opts) do
-        local ob = _new("TextButton",{
-            Size=UDim2.new(1,0,0,26), BackgroundTransparency=1,
-            Text=opt, TextColor3=opt==sel and T.Accent or T.Text2,
-            Font=Enum.Font.GothamBold, TextSize=10,
-            ZIndex=51, AutoButtonColor=false,
-        }, list)
-        _padding(ob,0,0,8,8)
-        ob.MouseEnter:Connect(function()
-            ob.BackgroundColor3 = T.Accent
-            ob.BackgroundTransparency = 0.88
-            _tween(ob,{TextColor3=T.Accent},.1)
-        end)
-        ob.MouseLeave:Connect(function()
-            ob.BackgroundTransparency = 1
-            _tween(ob,{TextColor3=opt==sel and T.Accent or T.Text2},.1)
-        end)
-        ob.MouseButton1Click:Connect(function()
-            if not WIN._alive then return end
-            for _,c in ipairs(list:GetChildren()) do
-                if c:IsA("TextButton") then _tween(c,{TextColor3=T.Text2},.1) end
-            end
-            _tween(ob,{TextColor3=T.Accent},.1)
-            sel = opt
-            pcall(function() selTxt.Text = opt end)
-            open = false
-            _tween(list,{Size=UDim2.new(.52,-4,0,0)},.18)
-            _tween(arrow,{Rotation=0},.18,Enum.EasingStyle.Back)
-            task.delay(.19,function()
-                pcall(function()
-                    if list and list.Parent then list.Visible=false end
-                end)
-            end)
-            if cfgKey then WIN._set(cfgKey,opt) end
-            if callback then pcall(callback,opt) end
-        end)
-    end
-
-    local toggleBtn = _new("TextButton",{
-        Size=UDim2.new(1,0,1,0), BackgroundTransparency=1,
-        Text="", ZIndex=15, AutoButtonColor=false,
-    }, ddBox)
-    toggleBtn.MouseButton1Click:Connect(function()
-        if not WIN._alive then return end
-        open = not open
-        if open then
-            list.Visible = true
-            _spring(list,{Size=UDim2.new(.52,-4,0,#opts*26)},.3)
-            _tween(arrow,{Rotation=180},.2,Enum.EasingStyle.Back)
-        else
-            _tween(list,{Size=UDim2.new(.52,-4,0,0)},.18)
-            _tween(arrow,{Rotation=0},.18,Enum.EasingStyle.Back)
-            task.delay(.19,function()
-                pcall(function()
-                    if list and list.Parent then list.Visible=false end
-                end)
-            end)
-        end
-    end)
-
-    item.MouseEnter:Connect(function() _tween(iSt,{Color=T.Border2},.12) end)
-    item.MouseLeave:Connect(function() _tween(iSt,{Color=T.Border},.12) end)
-
-    local ctrl = {}
-    function ctrl:Get() return sel end
-    function ctrl:Set(v)
-        sel = v
-        pcall(function() selTxt.Text = v end)
-    end
-    return ctrl
-end
-
-function XenonUI:_makeInput(parent, placeholder, cfgKey, callback)
-    local T   = XenonUI.DefaultTheme
-    local WIN = self
-
-    local item = _new("Frame",{
-        Size=UDim2.new(1,-8,0,30),
-        BackgroundColor3=T.BG3, BackgroundTransparency=0,
-        BorderSizePixel=0,
-    }, parent)
-    _corner(item,5)
-    local iSt = _stroke(item,T.Border)
-
-    local underline = _new("Frame",{
-        Size=UDim2.new(0,0,0,2), Position=UDim2.new(0,0,1,-2),
-        BackgroundColor3=T.Accent, BorderSizePixel=0, ZIndex=5,
-    }, item)
-
-    local box = _new("TextBox",{
-        Size=UDim2.new(1,-16,1,0), Position=UDim2.new(0,8,0,0),
-        BackgroundTransparency=1,
-        Text=self._get(cfgKey,""),
-        PlaceholderText=placeholder or "",
-        PlaceholderColor3=T.Text3, TextColor3=T.Text,
-        Font=Enum.Font.Gotham, TextSize=11,
-        TextXAlignment=Enum.TextXAlignment.Left,
-        ClearTextOnFocus=false, ZIndex=3,
-    }, item)
-
-    box.Focused:Connect(function()
-        _tween(iSt,{Color=T.Accent},.15)
-        _tween(item,{BackgroundColor3=T.BG4},.15)
-        _tween(underline,{Size=UDim2.new(1,0,0,2)},.25,Enum.EasingStyle.Back)
-    end)
-    box.FocusLost:Connect(function(enter)
-        _tween(iSt,{Color=T.Border},.15)
-        _tween(item,{BackgroundColor3=T.BG3},.15)
-        _tween(underline,{Size=UDim2.new(0,0,0,2)},.2)
-        pcall(function()
-            if cfgKey then WIN._set(cfgKey, box.Text) end
-            if callback then callback(box.Text, enter) end
-        end)
-    end)
-
-    return box
-end
-
-function XenonUI:_makeKeybind(parent, label, bindId, defaultKey, callback)
-    local T   = XenonUI.DefaultTheme
-    local WIN = self
-
-    local savedName = self._get("kb_"..bindId,
-        defaultKey and defaultKey.Name or "None")
-    local kc = Enum.KeyCode[savedName] or defaultKey or Enum.KeyCode.Unknown
-    local entry = {id=bindId, label=label, key=kc, callback=callback}
-    self._kbReg[bindId] = entry
-
-    WIN:_addConn(UserInputService.InputBegan, function(inp, gp)
-        if not WIN._alive or gp then return end
-        if entry.key ~= Enum.KeyCode.Unknown and inp.KeyCode == entry.key then
-            if callback then pcall(callback, entry.key) end
-        end
-    end)
-
-    local item = _new("Frame",{
-        Size=UDim2.new(1,-8,0,30),
-        BackgroundColor3=T.BG3, BackgroundTransparency=0,
-        BorderSizePixel=0,
-    }, parent)
-    _corner(item,5)
-    local iSt = _stroke(item,T.Border)
-
-    _new("TextLabel",{
-        Size=UDim2.new(1,-88,1,0), Position=UDim2.new(0,10,0,0),
-        BackgroundTransparency=1, Text=label, TextColor3=T.Text,
-        Font=Enum.Font.GothamBold, TextSize=11,
-        TextXAlignment=Enum.TextXAlignment.Left,
-    }, item)
-
-    local badge = _new("Frame",{
-        Size=UDim2.new(0,54,0,20), Position=UDim2.new(1,-84,0.5,-10),
-        BackgroundColor3=T.BG4, BackgroundTransparency=0,
-        BorderSizePixel=0, ZIndex=3,
-    }, item)
-    _corner(badge,4); _stroke(badge,T.Border2)
-
-    local badgeTxt = _new("TextLabel",{
-        Size=UDim2.new(1,0,1,0), BackgroundTransparency=1,
-        Text=entry.key==Enum.KeyCode.Unknown and "None" or entry.key.Name,
-        TextColor3=T.Text2, Font=Enum.Font.GothamBold,
-        TextSize=10, ZIndex=4,
-    }, badge)
-    self._kbBadges[bindId] = badgeTxt
-
-    local editBtn = _new("TextButton",{
-        Size=UDim2.new(0,20,0,20), Position=UDim2.new(1,-22,0.5,-10),
-        BackgroundColor3=T.BG4, BackgroundTransparency=0,
-        BorderSizePixel=0, Text="…",
-        Font=Enum.Font.GothamBold, TextSize=9,
-        TextColor3=T.Accent, ZIndex=5, AutoButtonColor=false,
-    }, item)
-    _corner(editBtn,4); _stroke(editBtn,T.Border2)
-
-    editBtn.MouseEnter:Connect(function()
-        _tween(editBtn,{BackgroundColor3=T.AccentDim},.12)
-        _tween(editBtn:FindFirstChildOfClass("UIStroke"),{Color=T.Accent},.12)
-    end)
-    editBtn.MouseLeave:Connect(function()
-        _tween(editBtn,{BackgroundColor3=T.BG4},.12)
-        _tween(editBtn:FindFirstChildOfClass("UIStroke"),{Color=T.Border2},.12)
-    end)
-    editBtn.MouseButton1Down:Connect(function()
-        _tween(editBtn,{Size=UDim2.new(0,17,0,17)},.07)
-    end)
-    editBtn.MouseButton1Click:Connect(function()
-        if not WIN._alive then return end
-        _spring(editBtn,{Size=UDim2.new(0,20,0,20)},.2)
-        local mp = UserInputService:GetMouseLocation()
-        _ripple(editBtn, mp.X, mp.Y)
-        WIN:_openPicker(bindId, item)
-    end)
-
-    item.MouseEnter:Connect(function()
-        _tween(iSt,{Color=T.Border2},.12)
-    end)
-    item.MouseLeave:Connect(function()
-        _tween(iSt,{Color=T.Border},.12)
-    end)
-
-    local ctrl = {}
-    function ctrl:GetKey() return entry.key end
-    return ctrl
-end
-
-return XenonUI
