@@ -20,7 +20,7 @@ XenonUI.DefaultTheme = {
     Accent    = Color3.fromRGB(80,201,206),
     Accent2   = Color3.fromRGB(60,165,170),
     AccentDim = Color3.fromRGB(22,70,75),
-    Text      = Color3.fromRGB(237,237,231),
+    Text      = Color3.fromRGB(237,237,237),
     Text2     = Color3.fromRGB(160,160,160),
     Text3     = Color3.fromRGB(90,90,110),
     Red       = Color3.fromRGB(255,95,87),
@@ -124,9 +124,9 @@ function XenonUI:CreateWindow(options)
     WIN._activeTab   = nil
     WIN._kbReg       = {}
     WIN._kbBadges    = {}
+    WIN._minimized   = false
     WIN._winSize     = "normal"
     WIN._guiVisible  = true
-    WIN._savedPos    = nil
     WIN._cfgData     = {}
     WIN._cfgPath     = options.SaveKey or "xenon_cfg.json"
     WIN._toggleReg   = {}
@@ -393,18 +393,21 @@ function XenonUI:CreateWindow(options)
         task.delay(.3, function() WIN:Destroy() end)
     end)
 
-    -- ИЗМЕНЕНО: Желтая кнопка теперь скрывает/показывает окно (уезжает/выезжает)
     makeTopBtn(T.Yellow, "-", function()
         if not WIN._alive then return end
-        if WIN._guiVisible then
-            WIN:Hide()
+        WIN._minimized = not WIN._minimized
+        local sz = WIN._WIN_SIZES[WIN._winSize]
+        if WIN._minimized then
+            _tween(Win,{Size=UDim2.new(0,sz.X,0,40)},.3,Enum.EasingStyle.Quad)
+            _tween(WH, {Size=UDim2.new(0,sz.X+20,0,60)},.3,Enum.EasingStyle.Quad)
         else
-            WIN:Show()
+            _spring(Win,{Size=UDim2.new(0,sz.X,0,sz.Y)},.45)
+            _spring(WH, {Size=UDim2.new(0,sz.X+20,0,sz.Y+20)},.45)
         end
     end)
 
     makeTopBtn(T.Green, "+", function()
-        if not WIN._alive then return end
+        if not WIN._alive or WIN._minimized then return end
         if     WIN._winSize=="normal" then WIN:SetSize("large",true)
         elseif WIN._winSize=="large"  then WIN:SetSize("small",true)
         else                               WIN:SetSize("normal",true) end
@@ -817,31 +820,24 @@ function XenonUI:Destroy()
     end)
 end
 
--- ИЗМЕНЕНО: Окно плавно уезжает за правый край экрана
 function XenonUI:Hide()
-    if not self._alive or self._guiVisible == false then return end
+    if not self._alive then return end
     self._guiVisible = false
-    self._savedPos = self._WH.Position
-    _tween(self._WH, {
-        Position = UDim2.new(1, 50, self._WH.Position.Y.Scale, self._WH.Position.Y.Offset)
-    }, 0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-    task.delay(0.36, function()
-        if not self._guiVisible and self._WH and self._WH.Parent then
-            self._WH.Visible = false
-        end
+    _tween(self._Win,{BackgroundTransparency=1},.2)
+    task.delay(.22, function()
+        pcall(function()
+            if self._WH and self._WH.Parent then self._WH.Visible = false end
+        end)
     end)
 end
 
--- ИЗМЕНЕНО: Окно плавно выезжает обратно на свою старую позицию
 function XenonUI:Show()
-    if not self._alive or self._guiVisible == true then return end
+    if not self._alive then return end
     self._guiVisible = true
-    if self._WH and self._WH.Parent then
-        self._WH.Visible = true
-        _spring(self._WH, {
-            Position = self._savedPos or UDim2.new(.5,-272,.5,-197)
-        }, 0.5)
-    end
+    pcall(function()
+        self._WH.Visible               = true
+        self._Win.BackgroundTransparency = 0
+    end)
 end
 
 function XenonUI:SetSize(sizeName, animate)
