@@ -297,7 +297,8 @@ function XenonUI:CreateWindow(options)
         BorderSizePixel  = 0,
         ZIndex           = 4,
     }, WinClip)
-    _corner(TB, 10)
+    local TBCorner = _corner(TB, 10)
+    WIN._TBCorner = TBCorner
     _new("Frame",{
         Size             = UDim2.new(1,0,.5,0),
         Position         = UDim2.new(0,0,.5,0),
@@ -403,23 +404,22 @@ function XenonUI:CreateWindow(options)
     makeTopBtn(T.Yellow, "-", function()
         if not WIN._alive then return end
        WIN._minimized = not WIN._minimized
-        local sz = WIN._WIN_SIZES[WIN._winSize]
+       local sz = WIN._WIN_SIZES[WIN._winSize]
 
-        if WIN._minimized then
-           _tween(Win, { Size = UDim2.new(0, sz.X, 0, 40) }, 0.3)
-           _tween(WH,  { Size = UDim2.new(0, sz.X + 20, 0, 60) }, 0.3)
+       if WIN._minimized then
+            _tween(Win, { Size = UDim2.new(0, sz.X, 0, 40) }, 0.3)
+            _tween(WH,  { Size = UDim2.new(0, sz.X + 20, 0, 60) }, 0.3)
 
-           -- УБИРАЕМ НИЖНИЕ УГЛЫ
-           WIN._WinCorner.CornerRadius = UDim.new(0, 10)
-              WinClip.ClipsDescendants = true
+        -- Убираем нижнее скругление у TitleBar
+            WIN._TBCorner.CornerRadius = UDim.new(0, 10)
 
-        else
-            _spring(Win, { Size = UDim2.new(0, sz.X, 0, sz.Y) }, 0.45)
+       else
+           _spring(Win, { Size = UDim2.new(0, sz.X, 0, sz.Y) }, 0.45)
             _spring(WH,  { Size = UDim2.new(0, sz.X + 20, 0, sz.Y + 20) }, 0.45)
 
-            -- ВОЗВРАЩАЕМ УГЛЫ
-            WIN._WinCorner.CornerRadius = UDim.new(0, 10)
-        end
+        -- Возвращаем нормальное поведение
+            WIN._TBCorner.CornerRadius = UDim.new(0, 10)
+       end
     end)
 
     makeTopBtn(T.Green, "+", function()
