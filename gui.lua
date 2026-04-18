@@ -244,9 +244,11 @@ function XenonUI:CreateWindow(options)
     _list(NC, 6, Enum.FillDirection.Vertical, Enum.HorizontalAlignment.Right, Enum.VerticalAlignment.Bottom)
     WIN._NC = NC
 
+    -- ФИО: WH теперь точно соответствует размеру Win + padding 20
+    local initSz = WIN._WIN_SIZES["normal"]
     local WH = _new("Frame",{
         Name                 = "WH",
-        Size                 = UDim2.new(0,545,0,395),
+        Size                 = UDim2.new(0, initSz.X+20, 0, initSz.Y+20),
         Position             = UDim2.new(.5,-272,.5,-197),
         BackgroundTransparency = 1,
         BorderSizePixel      = 0,
@@ -255,7 +257,7 @@ function XenonUI:CreateWindow(options)
 
     local Win = _new("Frame",{
         Name             = "Win",
-        Size             = UDim2.new(0,525,0,375),
+        Size             = UDim2.new(0, initSz.X, 0, initSz.Y),
         Position         = UDim2.new(0,10,0,10),
         BackgroundColor3 = T.BG,
         BorderSizePixel  = 0,
@@ -277,11 +279,14 @@ function XenonUI:CreateWindow(options)
     _corner(WinClip, 10)
     WIN._WinClip = WinClip
 
+    -- Анимация появления
     Win.Size     = UDim2.new(0,0,0,0)
+    WH.Size      = UDim2.new(0,20,0,20)
     Win.Position = UDim2.new(0,272,0,197)
     task.defer(function()
         if WIN._alive then
-            _spring(Win,{ Size=UDim2.new(0,525,0,375), Position=UDim2.new(0,10,0,10) }, 0.55)
+            _spring(Win,{ Size=UDim2.new(0, initSz.X, 0, initSz.Y), Position=UDim2.new(0,10,0,10) }, 0.55)
+            _spring(WH,  { Size=UDim2.new(0, initSz.X+20, 0, initSz.Y+20) }, 0.55)
         end
     end)
 
@@ -393,16 +398,19 @@ function XenonUI:CreateWindow(options)
         task.delay(.3, function() WIN:Destroy() end)
     end)
 
+    -- ФИКС: жёлтая кнопка минимизации
     makeTopBtn(T.Yellow, "-", function()
         if not WIN._alive then return end
         WIN._minimized = not WIN._minimized
         local sz = WIN._WIN_SIZES[WIN._winSize]
         if WIN._minimized then
-            _tween(Win,{Size=UDim2.new(0,sz.X,0,40)},.3,Enum.EasingStyle.Quad)
-            _tween(WH, {Size=UDim2.new(0,sz.X+20,0,60)},.3,Enum.EasingStyle.Quad)
+            -- Минимизация: высота 40 (только тайтлбар), ширина остаётся
+            _tween(Win, { Size = UDim2.new(0, sz.X, 0, 40) }, 0.3, Enum.EasingStyle.Quad)
+            _tween(WH,  { Size = UDim2.new(0, sz.X + 20, 0, 60) }, 0.3, Enum.EasingStyle.Quad)
         else
-            _spring(Win,{Size=UDim2.new(0,sz.X,0,sz.Y)},.45)
-            _spring(WH, {Size=UDim2.new(0,sz.X+20,0,sz.Y+20)},.45)
+            -- Разворот: возвращаем полный размер через _spring для плавности
+            _spring(Win, { Size = UDim2.new(0, sz.X, 0, sz.Y) }, 0.45)
+            _spring(WH,  { Size = UDim2.new(0, sz.X + 20, 0, sz.Y + 20) }, 0.45)
         end
     end)
 
@@ -844,13 +852,16 @@ function XenonUI:SetSize(sizeName, animate)
     if not self._alive then return end
     self._winSize = sizeName
     local sz = self._WIN_SIZES[sizeName]
+    -- Если сейчас минимизирован - не трогаем высоту
+    local targetH = self._minimized and 40 or sz.Y
+    local whH     = self._minimized and 60 or sz.Y + 20
     if animate then
-        _spring(self._Win,{Size=UDim2.new(0,sz.X,0,sz.Y)},.45)
-        _spring(self._WH, {Size=UDim2.new(0,sz.X+20,0,sz.Y+20)},.45)
+        _spring(self._Win, { Size = UDim2.new(0, sz.X, 0, targetH) }, .45)
+        _spring(self._WH,  { Size = UDim2.new(0, sz.X+20, 0, whH) }, .45)
     else
         pcall(function()
-            self._Win.Size = UDim2.new(0,sz.X,0,sz.Y)
-            self._WH.Size  = UDim2.new(0,sz.X+20,0,sz.Y+20)
+            self._Win.Size = UDim2.new(0, sz.X, 0, targetH)
+            self._WH.Size  = UDim2.new(0, sz.X+20, 0, whH)
         end)
     end
 end
@@ -1577,31 +1588,4 @@ function XenonUI:_makeKeybind(parent, label, bindId, defaultKey, callback)
     return ctrl
 end
 
--- ПРИМЕР ИСПОЛЬЗОВАНИЯ (удали если используешь как библиотеку)
-local W = XenonUI:CreateWindow({
-    Title   = "Hub",
-    SaveKey = "hub.json",
-})
-
-local tab = W:CreateTab("Main")
-local sec = tab:CreateSection("Combat", true)
-
-sec:AddToggle("Speed Hack", false, "speedHack", function(v)
-    local char = game.Players.LocalPlayer.Character
-    if char and char:FindFirstChild("Humanoid") then
-        char.Humanoid.WalkSpeed = v and 50 or 16
-    end
-end)
-
-sec:AddSlider("WalkSpeed", 0, 200, 16, "walkspeed", function(v)
-    local char = game.Players.LocalPlayer.Character
-    if char and char:FindFirstChild("Humanoid") then
-        char.Humanoid.WalkSpeed = v
-    end
-end)
-
-sec:AddButton("Test", function()
-    W:Notify("Test", "Works!", "ok")
-end)
-
-W:Notify("Loaded", "Hub ready! Insert = toggle", "ok")
+return XenonUI
