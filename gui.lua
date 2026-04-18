@@ -263,7 +263,8 @@ function XenonUI:CreateWindow(options)
         BorderSizePixel  = 0,
         ClipsDescendants = false,
     }, WH)
-    _corner(Win, 10)
+    local WinCorner = _corner(Win, 10)
+    WIN._WinCorner = WinCorner
     local WinStroke = _stroke(Win, T.Border, 1)
     WIN._Win   = Win
     WIN._WinSt = WinStroke
@@ -401,16 +402,23 @@ function XenonUI:CreateWindow(options)
     -- ФИКС: жёлтая кнопка минимизации
     makeTopBtn(T.Yellow, "-", function()
         if not WIN._alive then return end
-        WIN._minimized = not WIN._minimized
+       WIN._minimized = not WIN._minimized
         local sz = WIN._WIN_SIZES[WIN._winSize]
+
         if WIN._minimized then
-           _tween(Win,     { Size = UDim2.new(0, sz.X, 0, 40) }, 0.3, Enum.EasingStyle.Quad)
-           _tween(WH,      { Size = UDim2.new(0, sz.X + 20, 0, 60) }, 0.3, Enum.EasingStyle.Quad)
-           _tween(WinClip, { Size = UDim2.new(1, 0, 0, 40) }, 0.3, Enum.EasingStyle.Quad)
+           _tween(Win, { Size = UDim2.new(0, sz.X, 0, 40) }, 0.3)
+           _tween(WH,  { Size = UDim2.new(0, sz.X + 20, 0, 60) }, 0.3)
+
+           -- УБИРАЕМ НИЖНИЕ УГЛЫ
+           WIN._WinCorner.CornerRadius = UDim.new(0, 10)
+              WinClip.ClipsDescendants = true
+
         else
-            _spring(Win,     { Size = UDim2.new(0, sz.X, 0, sz.Y) }, 0.45)
-           _spring(WH,      { Size = UDim2.new(0, sz.X + 20, 0, sz.Y + 20) }, 0.45)
-           _spring(WinClip, { Size = UDim2.new(1, 0, 1, 0) }, 0.45)
+            _spring(Win, { Size = UDim2.new(0, sz.X, 0, sz.Y) }, 0.45)
+            _spring(WH,  { Size = UDim2.new(0, sz.X + 20, 0, sz.Y + 20) }, 0.45)
+
+            -- ВОЗВРАЩАЕМ УГЛЫ
+            WIN._WinCorner.CornerRadius = UDim.new(0, 10)
         end
     end)
 
