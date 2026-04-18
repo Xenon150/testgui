@@ -404,13 +404,13 @@ function XenonUI:CreateWindow(options)
         WIN._minimized = not WIN._minimized
         local sz = WIN._WIN_SIZES[WIN._winSize]
         if WIN._minimized then
-            -- Минимизация: высота 40 (только тайтлбар), ширина остаётся
-            _tween(Win, { Size = UDim2.new(0, sz.X, 0, 40) }, 0.3, Enum.EasingStyle.Quad)
-            _tween(WH,  { Size = UDim2.new(0, sz.X + 20, 0, 60) }, 0.3, Enum.EasingStyle.Quad)
+           _tween(Win,     { Size = UDim2.new(0, sz.X, 0, 40) }, 0.3, Enum.EasingStyle.Quad)
+           _tween(WH,      { Size = UDim2.new(0, sz.X + 20, 0, 60) }, 0.3, Enum.EasingStyle.Quad)
+           _tween(WinClip, { Size = UDim2.new(1, 0, 0, 40) }, 0.3, Enum.EasingStyle.Quad)
         else
-            -- Разворот: возвращаем полный размер через _spring для плавности
-            _spring(Win, { Size = UDim2.new(0, sz.X, 0, sz.Y) }, 0.45)
-            _spring(WH,  { Size = UDim2.new(0, sz.X + 20, 0, sz.Y + 20) }, 0.45)
+            _spring(Win,     { Size = UDim2.new(0, sz.X, 0, sz.Y) }, 0.45)
+           _spring(WH,      { Size = UDim2.new(0, sz.X + 20, 0, sz.Y + 20) }, 0.45)
+           _spring(WinClip, { Size = UDim2.new(1, 0, 1, 0) }, 0.45)
         end
     end)
 
